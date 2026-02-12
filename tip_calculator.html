@@ -122,16 +122,44 @@
 
   <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
   <script>
-    const ACCESS_PASSWORD = '1225';
+    function decodeToken(encoded, key) {
+      return encoded.map((n) => String.fromCharCode(n ^ key)).join('');
+    }
+
+    function passSignature(input) {
+      const source = String(input ?? '');
+      let a = 0x45d9f3b;
+      let b = 0x119de1f3;
+      let c = 0x27d4eb2d;
+      let d = 0x165667b1;
+
+      for (let i = 0; i < source.length; i += 1) {
+        const v = source.charCodeAt(i) & 0xff;
+        a = Math.imul(a ^ (v + i * 17), 2654435761) >>> 0;
+        b = (b + Math.imul(v ^ 0xa5, 2246822519)) >>> 0;
+        c = Math.imul(c ^ (a >>> ((i % 4) * 8)), 3266489917) >>> 0;
+        d = (d ^ (b + c + ((v + i) << 1))) >>> 0;
+      }
+
+      a ^= a >>> 16; a = Math.imul(a, 2246822507) >>> 0;
+      b ^= b >>> 15; b = Math.imul(b, 3266489909) >>> 0;
+      c ^= c >>> 13; c = Math.imul(c, 668265263) >>> 0;
+      d ^= d >>> 16; d = Math.imul(d, 374761393) >>> 0;
+
+      return [a, b, c, d].map((n) => n.toString(16).padStart(8, '0')).join('');
+    }
 
     function requirePassword() {
+      const expected = decodeToken([119, 43, 37, 36, 36, 113, 42, 118, 112, 36, 118, 112, 34, 32, 39, 114, 35, 119, 42, 42, 39, 112, 43, 113, 33, 119, 112, 113, 34, 42, 35, 39], 19);
+      const promptMsg = decodeToken([100, 79, 85, 68, 83, 1, 81, 64, 82, 82, 86, 78, 83, 69, 1, 85, 78, 1, 64, 66, 66, 68, 82, 82, 1, 85, 73, 72, 82, 1, 81, 64, 70, 68, 27], 33);
+      const alertMsg = decodeToken([100, 67, 78, 66, 95, 95, 72, 78, 89, 13, 93, 76, 94, 94, 90, 66, 95, 73, 3], 45);
       let attempts = 0;
       while (attempts < 3) {
-        const input = window.prompt('Enter password to access this page:');
-        if (input === ACCESS_PASSWORD) return true;
+        const input = window.prompt(promptMsg);
+        if (input !== null && passSignature(input) === expected) return true;
         if (input === null) break;
         attempts += 1;
-        window.alert('Incorrect password.');
+        window.alert(alertMsg);
       }
       return false;
     }
