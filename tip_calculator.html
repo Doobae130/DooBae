@@ -40,6 +40,27 @@
     .field { border: 1px solid var(--border); border-radius: 10px; padding: 12px; background: #fafafa; }
     .field label { display: block; font-weight: 600; margin-bottom: 6px; }
     input[type="file"] { width: 100%; }
+    .dropzone {
+      margin-top: 8px;
+      border: 2px dashed #9ca3af;
+      border-radius: 8px;
+      padding: 14px;
+      text-align: center;
+      color: var(--muted);
+      background: #ffffff;
+      transition: border-color 0.15s ease, background-color 0.15s ease;
+    }
+    .dropzone.dragover {
+      border-color: var(--primary);
+      background: #ecfeff;
+      color: #115e59;
+    }
+    .dropzone .file-name {
+      display: block;
+      margin-top: 6px;
+      color: #374151;
+      font-size: 0.9rem;
+    }
     button {
       border: 0;
       background: var(--primary);
@@ -69,20 +90,29 @@
 <body>
   <main class="container">
     <h1>Staff Tip Settlement Generator</h1>
-    <p>Upload Sales.csv, HallWorkingHours.csv, and KitchenWorkingHours.csv to download Result.xlsx. (Hall 70%, Kitchen 30%)</p>
+    <p>Upload Sales/Hall/Kitchen working files as CSV or XLSX, then download Result.xlsx. (Hall 70%, Kitchen 30%)</p>
 
     <div class="grid">
       <div class="field">
-        <label for="salesFile">1) Sales.csv</label>
-        <input id="salesFile" type="file" accept=".csv,text/csv" />
+        <label for="salesFile">1) Sales (CSV/XLSX)</label>
+        <input id="salesFile" type="file" accept=".csv,.xlsx,.xls,text/csv,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet,application/vnd.ms-excel" />
+        <div class="dropzone" data-input-id="salesFile">Drop file here
+          <span class="file-name" id="salesFileName">No file selected</span>
+        </div>
       </div>
       <div class="field">
-        <label for="hallFile">2) HallWorkingHours.csv</label>
-        <input id="hallFile" type="file" accept=".csv,text/csv" />
+        <label for="hallFile">2) HallWorkingHours (CSV/XLSX)</label>
+        <input id="hallFile" type="file" accept=".csv,.xlsx,.xls,text/csv,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet,application/vnd.ms-excel" />
+        <div class="dropzone" data-input-id="hallFile">Drop file here
+          <span class="file-name" id="hallFileName">No file selected</span>
+        </div>
       </div>
       <div class="field">
-        <label for="kitchenFile">3) KitchenWorkingHours.csv</label>
-        <input id="kitchenFile" type="file" accept=".csv,text/csv" />
+        <label for="kitchenFile">3) KitchenWorkingHours (CSV/XLSX)</label>
+        <input id="kitchenFile" type="file" accept=".csv,.xlsx,.xls,text/csv,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet,application/vnd.ms-excel" />
+        <div class="dropzone" data-input-id="kitchenFile">Drop file here
+          <span class="file-name" id="kitchenFileName">No file selected</span>
+        </div>
       </div>
     </div>
 
@@ -117,6 +147,7 @@
     const salesInput = document.getElementById('salesFile');
     const hallInput = document.getElementById('hallFile');
     const kitchenInput = document.getElementById('kitchenFile');
+    const dropzones = document.querySelectorAll('.dropzone');
     const runBtn = document.getElementById('runBtn');
     const statusEl = document.getElementById('status');
 
@@ -170,13 +201,41 @@
       return Number(s) || 0;
     }
 
-    function parseDateFlexible(value) {
+    function parseDateFlexible(value, order = 'auto') {
+      if (value instanceof Date && !Number.isNaN(value.getTime())) {
+        return new Date(value.getFullYear(), value.getMonth(), value.getDate(), 12, 0, 0);
+      }
+
+      if (typeof value === 'number' && Number.isFinite(value) && value > 0) {
+        if (window.XLSX && XLSX.SSF && typeof XLSX.SSF.parse_date_code === 'function') {
+          const parsed = XLSX.SSF.parse_date_code(value);
+          if (parsed && parsed.y && parsed.m && parsed.d) {
+            return new Date(parsed.y, parsed.m - 1, parsed.d, 12, 0, 0);
+          }
+        }
+      }
+
       const s = clean(value);
       if (!s) return null;
+
       const ymd = s.match(/^(\d{4})-(\d{1,2})-(\d{1,2})$/);
       if (ymd) return new Date(Number(ymd[1]), Number(ymd[2]) - 1, Number(ymd[3]), 12, 0, 0);
-      const mdy = s.match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})$/);
-      if (mdy) return new Date(Number(mdy[3]), Number(mdy[1]) - 1, Number(mdy[2]), 12, 0, 0);
+
+      const slashDate = s.match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})$/);
+      if (slashDate) {
+        const a = Number(slashDate[1]);
+        const b = Number(slashDate[2]);
+        const y = Number(slashDate[3]);
+        const asDMY = new Date(y, b - 1, a, 12, 0, 0);
+        const asMDY = new Date(y, a - 1, b, 12, 0, 0);
+
+        if (order === 'dmy') return asDMY;
+        if (order === 'mdy') return asMDY;
+
+        if (a > 12 && b <= 12) return asDMY;
+        if (b > 12 && a <= 12) return asMDY;
+      }
+
       const dt = new Date(s);
       if (!Number.isNaN(dt.getTime())) return new Date(dt.getFullYear(), dt.getMonth(), dt.getDate(), 12, 0, 0);
       return null;
@@ -189,38 +248,124 @@
       return `${y}-${m}-${d}`;
     }
 
+    function swapMonthDay(dateObj) {
+      const y = dateObj.getFullYear();
+      const m = dateObj.getMonth() + 1;
+      const d = dateObj.getDate();
+      if (m > 12 || d > 12) return null;
+      return new Date(y, d - 1, m, 12, 0, 0);
+    }
+
+    function dayDiff(a, b) {
+      const msPerDay = 1000 * 60 * 60 * 24;
+      return Math.round((b - a) / msPerDay);
+    }
+
+    function uniqueDateCandidates(candidates) {
+      const map = new Map();
+      for (const d of candidates) {
+        if (!d || Number.isNaN(d.getTime())) continue;
+        map.set(toDateKey(d), d);
+      }
+      return [...map.values()];
+    }
+
+    function inferSalesHeaderDates(header, order) {
+      const parsedPerCol = [];
+      for (let i = 1; i < header.length; i += 1) {
+        const base = parseDateFlexible(header[i], order);
+        if (!base) {
+          parsedPerCol.push([]);
+          continue;
+        }
+        const swapped = swapMonthDay(base);
+        parsedPerCol.push(uniqueDateCandidates([base, swapped]));
+      }
+
+      const hasAmbiguous = parsedPerCol.some((list) => list.length > 1);
+      const hasEmpty = parsedPerCol.some((list) => list.length === 0);
+      if (!hasAmbiguous || hasEmpty) {
+        return parsedPerCol.map((list) => list[0] || null);
+      }
+
+      const dp = parsedPerCol.map((list) => list.map(() => ({ score: Number.NEGATIVE_INFINITY, prev: -1 })));
+      for (let j = 0; j < parsedPerCol[0].length; j += 1) {
+        dp[0][j].score = 0;
+      }
+
+      for (let i = 1; i < parsedPerCol.length; i += 1) {
+        for (let j = 0; j < parsedPerCol[i].length; j += 1) {
+          const curr = parsedPerCol[i][j];
+          for (let k = 0; k < parsedPerCol[i - 1].length; k += 1) {
+            const prev = parsedPerCol[i - 1][k];
+            const prevState = dp[i - 1][k];
+            if (!prev || !curr || !Number.isFinite(prevState.score)) continue;
+            const diff = dayDiff(prev, curr);
+            let transition = -Math.abs(diff - 1);
+            if (diff === 1) transition += 6;
+            if (diff <= 0) transition -= 1000;
+            if (diff > 31) transition -= 30;
+            const score = prevState.score + transition;
+            if (score > dp[i][j].score) {
+              dp[i][j].score = score;
+              dp[i][j].prev = k;
+            }
+          }
+        }
+      }
+
+      let bestIdx = 0;
+      for (let j = 1; j < dp[dp.length - 1].length; j += 1) {
+        if (dp[dp.length - 1][j].score > dp[dp.length - 1][bestIdx].score) bestIdx = j;
+      }
+
+      const chosen = Array(parsedPerCol.length).fill(null);
+      let cursor = bestIdx;
+      for (let i = parsedPerCol.length - 1; i >= 0; i -= 1) {
+        if (cursor < 0 || !parsedPerCol[i][cursor]) break;
+        chosen[i] = parsedPerCol[i][cursor];
+        cursor = dp[i][cursor].prev;
+      }
+
+      for (let i = 0; i < chosen.length; i += 1) {
+        if (!chosen[i] && parsedPerCol[i][0]) chosen[i] = parsedPerCol[i][0];
+      }
+      return chosen;
+    }
+
     function round2(n) { return Math.round((n + Number.EPSILON) * 100) / 100; }
 
-    function parseSalesTips(csvText) {
-      const rows = parseCSV(csvText).filter(r => r.some(c => clean(c) !== ''));
+    function parseSalesTips(rowsInput, order = 'mdy') {
+      const rows = rowsInput.filter(r => r.some(c => clean(c) !== ''));
       const header = rows[0] || [];
       const tipRow = rows.find(r => clean(r[0]).toLowerCase() === 'tip');
-      if (!tipRow) throw new Error('Could not find the Tip row in Sales.csv.');
+      if (!tipRow) throw new Error('Could not find the Tip row in Sales file.');
 
+      const inferredHeaderDates = inferSalesHeaderDates(header, order);
       const tipByDate = new Map();
       for (let i = 1; i < header.length; i += 1) {
-        const dateObj = parseDateFlexible(header[i]);
+        const dateObj = inferredHeaderDates[i - 1] || parseDateFlexible(header[i], order);
         if (!dateObj) continue;
         tipByDate.set(toDateKey(dateObj), parseMoney(tipRow[i]));
       }
       return tipByDate;
     }
 
-    function parseWorkingHours(csvText) {
-      const rows = parseCSV(csvText).filter(r => r.some(c => clean(c) !== ''));
+    function parseWorkingHours(rowsInput, order = 'dmy') {
+      const rows = rowsInput.filter(r => r.some(c => clean(c) !== ''));
       const header = (rows[0] || []).map(clean);
       const employeeIdx = header.indexOf('Employee Name');
       const dateIdx = header.indexOf('Date');
       const hoursIdx = header.indexOf('Total Hours');
       if (employeeIdx < 0 || dateIdx < 0 || hoursIdx < 0) {
-        throw new Error('Could not find required columns in working-hours CSV (Employee Name/Date/Total Hours).');
+        throw new Error('Could not find required columns in working-hours file (Employee Name/Date/Total Hours).');
       }
 
       const byDate = new Map();
       for (let i = 1; i < rows.length; i += 1) {
         const row = rows[i];
         const name = clean(row[employeeIdx]);
-        const dateObj = parseDateFlexible(row[dateIdx]);
+        const dateObj = parseDateFlexible(row[dateIdx], order);
         const hours = Number(clean(row[hoursIdx])) || 0;
         if (!name || !dateObj || hours <= 0) continue;
 
@@ -229,6 +374,49 @@
         byDate.get(key).set(name, (byDate.get(key).get(name) || 0) + hours);
       }
       return byDate;
+    }
+
+    function overlapCount(mapByDate, dateSet) {
+      let count = 0;
+      for (const key of mapByDate.keys()) {
+        if (dateSet.has(key)) count += 1;
+      }
+      return count;
+    }
+
+    function pickWorkingHoursOrder(rowsInput, salesDateSet) {
+      const dmy = parseWorkingHours(rowsInput, 'dmy');
+      const mdy = parseWorkingHours(rowsInput, 'mdy');
+      const dmyScore = overlapCount(dmy, salesDateSet);
+      const mdyScore = overlapCount(mdy, salesDateSet);
+      if (mdyScore > dmyScore) return { map: mdy, order: 'mdy', score: mdyScore };
+      return { map: dmy, order: 'dmy', score: dmyScore };
+    }
+
+    function buildDateScenario(salesRows, hallRows, kitchenRows, salesOrder) {
+      const tipByDate = parseSalesTips(salesRows, salesOrder);
+      const salesDateSet = new Set(tipByDate.keys());
+      const hallPicked = pickWorkingHoursOrder(hallRows, salesDateSet);
+      const kitchenPicked = pickWorkingHoursOrder(kitchenRows, salesDateSet);
+      const salesDateList = [...salesDateSet].sort((a, b) => a.localeCompare(b));
+      let spanDays = 0;
+      if (salesDateList.length >= 2) {
+        const first = new Date(`${salesDateList[0]}T00:00:00`);
+        const last = new Date(`${salesDateList[salesDateList.length - 1]}T00:00:00`);
+        spanDays = Math.round((last - first) / (1000 * 60 * 60 * 24));
+      }
+      return {
+        tipByDate,
+        hallHoursByDate: hallPicked.map,
+        kitchenHoursByDate: kitchenPicked.map,
+        score: hallPicked.score + kitchenPicked.score,
+        spanDays,
+        orders: {
+          sales: salesOrder,
+          hall: hallPicked.order,
+          kitchen: kitchenPicked.order
+        }
+      };
     }
 
     function makeRows(tipByDate, hallHoursByDate, kitchenHoursByDate) {
@@ -266,11 +454,100 @@
       return { detailRows, summaryRows, warnings };
     }
 
-    async function readFile(input, label) {
-      const file = input.files[0];
-      if (!file) throw new Error(`Please select ${label}.`);
-      return file.text();
+    function isAllowedFile(file) {
+      const name = clean(file && file.name).toLowerCase();
+      return name.endsWith('.csv') || name.endsWith('.xlsx') || name.endsWith('.xls');
     }
+
+    function inputLabel(input) {
+      if (input === salesInput) return 'Sales';
+      if (input === hallInput) return 'HallWorkingHours';
+      if (input === kitchenInput) return 'KitchenWorkingHours';
+      return 'file';
+    }
+
+    function updateSelectedFileName(input) {
+      const el = document.getElementById(`${input.id}Name`);
+      if (!el) return;
+      const file = input.files && input.files[0];
+      el.textContent = file ? file.name : 'No file selected';
+    }
+
+    function setInputFile(input, file) {
+      if (!isAllowedFile(file)) {
+        throw new Error(`${inputLabel(input)} only supports CSV/XLSX files.`);
+      }
+      const dataTransfer = new DataTransfer();
+      dataTransfer.items.add(file);
+      input.files = dataTransfer.files;
+      updateSelectedFileName(input);
+    }
+
+    async function readRowsFromInput(input) {
+      const file = input.files[0];
+      if (!file) throw new Error(`Please select ${inputLabel(input)} file.`);
+      if (!isAllowedFile(file)) throw new Error(`${inputLabel(input)} only supports CSV/XLSX files.`);
+
+      const name = file.name.toLowerCase();
+      if (name.endsWith('.csv')) {
+        const text = await file.text();
+        return parseCSV(text);
+      }
+
+      const bytes = await file.arrayBuffer();
+      const wb = XLSX.read(bytes, { type: 'array', cellDates: true });
+      const firstSheetName = wb.SheetNames[0];
+      if (!firstSheetName) throw new Error(`${inputLabel(input)} XLSX has no sheet.`);
+      const ws = wb.Sheets[firstSheetName];
+      return XLSX.utils.sheet_to_json(ws, { header: 1, raw: true, defval: '' });
+    }
+
+    [salesInput, hallInput, kitchenInput].forEach((input) => {
+      input.addEventListener('change', () => {
+        const file = input.files[0];
+        if (!file) {
+          updateSelectedFileName(input);
+          return;
+        }
+        if (!isAllowedFile(file)) {
+          input.value = '';
+          updateSelectedFileName(input);
+          setStatus(`${inputLabel(input)} only supports CSV/XLSX files.`, true);
+          return;
+        }
+        updateSelectedFileName(input);
+      });
+    });
+
+    dropzones.forEach((zone) => {
+      const input = document.getElementById(zone.dataset.inputId);
+      if (!input) return;
+
+      ['dragenter', 'dragover'].forEach((eventName) => {
+        zone.addEventListener(eventName, (event) => {
+          event.preventDefault();
+          zone.classList.add('dragover');
+        });
+      });
+
+      ['dragleave', 'drop'].forEach((eventName) => {
+        zone.addEventListener(eventName, (event) => {
+          event.preventDefault();
+          zone.classList.remove('dragover');
+        });
+      });
+
+      zone.addEventListener('drop', (event) => {
+        const file = event.dataTransfer && event.dataTransfer.files && event.dataTransfer.files[0];
+        if (!file) return;
+        try {
+          setInputFile(input, file);
+          setStatus(`${inputLabel(input)} file selected: ${file.name}`);
+        } catch (err) {
+          setStatus(`Error: ${err.message}`, true);
+        }
+      });
+    });
 
     runBtn.addEventListener('click', async () => {
       try {
@@ -278,16 +555,25 @@
         runBtn.disabled = true;
         setStatus('Reading files...');
 
-        const [salesText, hallText, kitchenText] = await Promise.all([
-          readFile(salesInput, 'Sales.csv'),
-          readFile(hallInput, 'HallWorkingHours.csv'),
-          readFile(kitchenInput, 'KitchenWorkingHours.csv')
+        const [salesRows, hallRows, kitchenRows] = await Promise.all([
+          readRowsFromInput(salesInput),
+          readRowsFromInput(hallInput),
+          readRowsFromInput(kitchenInput)
         ]);
 
         setStatus('Calculating...');
-        const tipByDate = parseSalesTips(salesText);
-        const hallHoursByDate = parseWorkingHours(hallText);
-        const kitchenHoursByDate = parseWorkingHours(kitchenText);
+        const scenarioMdy = buildDateScenario(salesRows, hallRows, kitchenRows, 'mdy');
+        const scenarioDmy = buildDateScenario(salesRows, hallRows, kitchenRows, 'dmy');
+        let chosen = scenarioMdy;
+        if (scenarioDmy.score > scenarioMdy.score) {
+          chosen = scenarioDmy;
+        } else if (scenarioDmy.score === scenarioMdy.score && scenarioDmy.spanDays < scenarioMdy.spanDays) {
+          chosen = scenarioDmy;
+        }
+
+        const tipByDate = chosen.tipByDate;
+        const hallHoursByDate = chosen.hallHoursByDate;
+        const kitchenHoursByDate = chosen.kitchenHoursByDate;
         const { detailRows, summaryRows, warnings } = makeRows(tipByDate, hallHoursByDate, kitchenHoursByDate);
 
         const wb = XLSX.utils.book_new();
@@ -305,7 +591,9 @@
         const lines = [
           'Done: Result.xlsx created',
           `- Daily detail rows: ${detailRows.length}`,
-          `- Employees in summary: ${summaryRows.length}`
+          `- Employees in summary: ${summaryRows.length}`,
+          `- Date parse detected: Sales=${chosen.orders.sales.toUpperCase()}, Hall=${chosen.orders.hall.toUpperCase()}, Kitchen=${chosen.orders.kitchen.toUpperCase()}`,
+          `- Sales date span: ${chosen.spanDays} days`
         ];
         if (warnings.length) {
           lines.push('', '[Warnings]', ...warnings.slice(0, 10));
