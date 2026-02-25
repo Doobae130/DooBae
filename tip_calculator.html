@@ -366,7 +366,10 @@
     function parseSalesTips(rowsInput, order = 'mdy') {
       const rows = rowsInput.filter(r => r.some(c => clean(c) !== ''));
       const header = rows[0] || [];
-      const tipRow = rows.find(r => clean(r[0]).toLowerCase() === 'tip');
+      const tipRow = rows.find((r) => {
+        const label = clean(r[0]).toLowerCase();
+        return label === 'tip' || label === 'tips';
+      });
       if (!tipRow) throw new Error('Could not find the Tip row in Sales file.');
 
       const inferredHeaderDates = inferSalesHeaderDates(header, order);
