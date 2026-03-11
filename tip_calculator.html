@@ -456,15 +456,16 @@
       const warnings = [];
       const dates = [...tipByDate.keys()].sort((a, b) => a.localeCompare(b));
 
-      function distribute(dateKey, teamName, teamTip, hoursMap) {
-        const entries = [...(hoursMap ? hoursMap.entries() : [])].filter(([, h]) => h > 0);
-        const totalHours = entries.reduce((s, [, h]) => s + h, 0);
-        if (teamTip > 0 && totalHours <= 0) {
-          warnings.push(`${dateKey} ${teamName}: No working hours found, so ${teamTip.toFixed(2)} USD could not be distributed.`);
-          return;
-        }
-        for (const [name, hours] of entries) {
-          const tip = round2((hours / totalHours) * teamTip);
+      function distribute(dateKey, teamName, teamTip, entries, totalHours) {
+        if (teamTip > 0 && totalHours <= 0) return;
+        let allocated = 0;
+        for (let i = 0; i < entries.length; i += 1) {
+          const [name, hours] = entries[i];
+          // Assign rounding remainder to the last employee to keep exact cent-level totals.
+          const tip = i === entries.length - 1
+            ? round2(teamTip - allocated)
+            : round2((hours / totalHours) * teamTip);
+          allocated = round2(allocated + tip);
           detailRows.push({ Date: dateKey, Team: teamName, Employee: name, Hours: round2(hours), 'Tip Amount (USD)': tip });
           totalByEmployee.set(name, round2((totalByEmployee.get(name) || 0) + tip));
         }
@@ -472,8 +473,27 @@
 
       for (const dateKey of dates) {
         const totalTip = tipByDate.get(dateKey) || 0;
-        distribute(dateKey, 'Hall', totalTip * HALL_RATIO, hallHoursByDate.get(dateKey));
-        distribute(dateKey, 'Kitchen', totalTip * KITCHEN_RATIO, kitchenHoursByDate.get(dateKey));
+        const hallEntries = [...(hallHoursByDate.get(dateKey) ? hallHoursByDate.get(dateKey).entries() : [])].filter(([, h]) => h > 0);
+        const kitchenEntries = [...(kitchenHoursByDate.get(dateKey) ? kitchenHoursByDate.get(dateKey).entries() : [])].filter(([, h]) => h > 0);
+        const hallTotalHours = hallEntries.reduce((s, [, h]) => s + h, 0);
+        const kitchenTotalHours = kitchenEntries.reduce((s, [, h]) => s + h, 0);
+
+        let hallTipPool = totalTip * HALL_RATIO;
+        let kitchenTipPool = totalTip * KITCHEN_RATIO;
+
+        // If one team has no working hours on that date, allocate 100% of tip to the team that worked.
+        if (hallTotalHours <= 0 && kitchenTotalHours > 0) {
+          hallTipPool = 0;
+          kitchenTipPool = totalTip;
+        } else if (kitchenTotalHours <= 0 && hallTotalHours > 0) {
+          hallTipPool = totalTip;
+          kitchenTipPool = 0;
+        } else if (hallTotalHours <= 0 && kitchenTotalHours <= 0 && totalTip > 0) {
+          warnings.push(`${dateKey}: No working hours found in Hall/Kitchen, so ${totalTip.toFixed(2)} USD could not be distributed.`);
+        }
+
+        distribute(dateKey, 'Hall', hallTipPool, hallEntries, hallTotalHours);
+        distribute(dateKey, 'Kitchen', kitchenTipPool, kitchenEntries, kitchenTotalHours);
       }
 
       detailRows.sort((a, b) => (a.Date !== b.Date ? a.Date.localeCompare(b.Date) : (a.Team !== b.Team ? a.Team.localeCompare(b.Team) : a.Employee.localeCompare(b.Employee))));
