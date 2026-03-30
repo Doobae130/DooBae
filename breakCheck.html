@@ -1,0 +1,690 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Break Check Validator</title>
+  <style>
+    :root {
+      --bg: #f4efe6;
+      --panel: #fffaf2;
+      --ink: #1f2933;
+      --muted: #5f6c78;
+      --accent: #a33b20;
+      --accent-soft: #f4d7c7;
+      --line: #dccfbe;
+      --good: #2c6e49;
+      --bad-bg: #f9e1df;
+      --bad-text: #7a1f16;
+      --shadow: 0 18px 45px rgba(70, 40, 10, 0.12);
+    }
+
+    * {
+      box-sizing: border-box;
+    }
+
+    body {
+      margin: 0;
+      font-family: Georgia, "Times New Roman", serif;
+      color: var(--ink);
+      background:
+        radial-gradient(circle at top left, rgba(255, 255, 255, 0.9), transparent 35%),
+        linear-gradient(135deg, #e9ddcd 0%, var(--bg) 45%, #efe7da 100%);
+      min-height: 100vh;
+    }
+
+    html:not([data-authorized="true"]) body {
+      visibility: hidden;
+    }
+
+    .page {
+      max-width: 1180px;
+      margin: 0 auto;
+      padding: 40px 20px 28px;
+    }
+
+    h1 {
+      margin: 0 0 10px;
+      font-size: clamp(2rem, 3vw, 3.2rem);
+      line-height: 1;
+      letter-spacing: -0.03em;
+    }
+
+    .intro {
+      margin: 0 0 24px;
+      max-width: 760px;
+      color: var(--muted);
+      font-size: 1rem;
+      line-height: 1.6;
+    }
+
+    .card {
+      background: rgba(255, 250, 242, 0.92);
+      border: 1px solid var(--line);
+      border-radius: 24px;
+      box-shadow: var(--shadow);
+      overflow: hidden;
+    }
+
+    .dropzone {
+      position: relative;
+      display: grid;
+      width: 100%;
+      min-height: 180px;
+      place-items: center;
+      gap: 8px;
+      padding: 32px 24px;
+      border: 2px dashed #c6a88f;
+      border-radius: 20px;
+      text-align: center;
+      background: linear-gradient(180deg, rgba(255, 255, 255, 0.65), rgba(245, 232, 219, 0.8));
+      transition: transform 0.2s ease, border-color 0.2s ease, background 0.2s ease;
+      cursor: pointer;
+    }
+
+    .dropzone.dragover {
+      transform: translateY(-2px);
+      border-color: var(--accent);
+      background: linear-gradient(180deg, rgba(255, 243, 236, 0.9), rgba(244, 215, 199, 0.85));
+    }
+
+    .dropzone strong {
+      display: block;
+      font-size: 1.25rem;
+      margin: 0;
+    }
+
+    .dropzone span {
+      display: block;
+      color: var(--muted);
+    }
+
+    input[type="file"] {
+      position: absolute;
+      inset: 0;
+      opacity: 0;
+      cursor: pointer;
+    }
+
+    .toolbar,
+    .summary {
+      display: flex;
+      gap: 12px;
+      align-items: center;
+      justify-content: space-between;
+      flex-wrap: wrap;
+    }
+
+    .section {
+      padding: 24px;
+      border-top: 1px solid var(--line);
+    }
+
+    .section:first-child {
+      border-top: 0;
+    }
+
+    .button {
+      appearance: none;
+      border: 0;
+      border-radius: 999px;
+      padding: 12px 18px;
+      background: var(--accent);
+      color: #fffaf4;
+      font: inherit;
+      cursor: pointer;
+      transition: opacity 0.2s ease, transform 0.2s ease;
+    }
+
+    .button:disabled {
+      opacity: 0.45;
+      cursor: not-allowed;
+      transform: none;
+    }
+
+    .meta {
+      color: var(--muted);
+      font-size: 0.95rem;
+    }
+
+    .pill {
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+      padding: 8px 12px;
+      border-radius: 999px;
+      background: #f3e8da;
+      color: #5b4637;
+      font-size: 0.92rem;
+    }
+
+    .table-wrap {
+      overflow: auto;
+      border: 1px solid var(--line);
+      border-radius: 18px;
+      background: rgba(255, 255, 255, 0.66);
+    }
+
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      min-width: 980px;
+    }
+
+    th,
+    td {
+      padding: 12px 14px;
+      border-bottom: 1px solid #e7dccf;
+      text-align: left;
+      vertical-align: top;
+      font-size: 0.95rem;
+    }
+
+    th {
+      position: sticky;
+      top: 0;
+      background: #f8efe3;
+      z-index: 1;
+    }
+
+    tr:last-child td {
+      border-bottom: 0;
+    }
+
+    .violations {
+      color: var(--bad-text);
+      font-weight: 600;
+    }
+
+    .empty {
+      padding: 24px;
+      text-align: center;
+      color: var(--muted);
+    }
+
+    .error-box {
+      margin-top: 24px;
+      padding: 18px 20px;
+      border: 1px solid #d8aba6;
+      border-radius: 18px;
+      background: var(--bad-bg);
+      color: var(--bad-text);
+      min-height: 64px;
+      white-space: pre-wrap;
+    }
+
+    .error-box[data-empty="true"] {
+      color: #8c756f;
+      background: rgba(255, 250, 242, 0.7);
+      border-color: var(--line);
+    }
+
+    .note {
+      margin-top: 14px;
+      color: var(--muted);
+      font-size: 0.92rem;
+      line-height: 1.5;
+    }
+
+    @media (max-width: 720px) {
+      .page {
+        padding: 28px 14px 24px;
+      }
+
+      .section {
+        padding: 18px;
+      }
+
+      .dropzone {
+        min-height: 150px;
+        padding: 24px 18px;
+      }
+    }
+  </style>
+  <script>
+    async function sha256Hex(value) {
+      const buffer = await crypto.subtle.digest(
+        "SHA-256",
+        new TextEncoder().encode(value)
+      );
+
+      return Array.from(new Uint8Array(buffer))
+        .map((byte) => byte.toString(16).padStart(2, "0"))
+        .join("");
+    }
+
+    (async function requirePassword() {
+      const password = window.prompt("Enter password to open Break Check page:");
+
+      if (typeof password !== "string") {
+        window.alert("Incorrect password.");
+        window.location.replace("index.html");
+        return;
+      }
+
+      const expectedHash =
+        "f79b8977720743f5e7c8b5b2e3813a8a4cc9aacd97eb20fcf41a7169e66ec1b9";
+      const actualHash = await sha256Hex(password);
+
+      if (actualHash === expectedHash) {
+        document.documentElement.setAttribute("data-authorized", "true");
+        return;
+      }
+
+      window.alert("Incorrect password.");
+      window.location.replace("index.html");
+    })();
+  </script>
+</head>
+<body>
+  <main class="page">
+    <h1>Break Check Validator</h1>
+    <p class="intro">
+      This page accepts CSV files only and extracts invalid shifts. The current workspace
+      <code>breakRule.md</code> file is empty, so validation is based on reliably checkable CSV rules
+      plus a meal break requirement for shifts of 5 hours or longer, a maximum meal break limit of 30 minutes,
+      and a rule that flags shifts with 5 hours or more of work after the recorded meal break.
+    </p>
+
+    <section class="card">
+      <div class="section">
+        <label class="dropzone" id="dropzone">
+          <strong>Drag and drop a CSV file</strong>
+          <span>Or click to choose a CSV file.</span>
+          <input id="fileInput" type="file" accept=".csv,text/csv">
+        </label>
+        <p class="note" id="fileName">No file selected</p>
+      </div>
+
+      <div class="section">
+        <div class="toolbar">
+          <div class="summary">
+            <span class="pill" id="totalRows">Total rows 0</span>
+            <span class="pill" id="invalidRows">Invalid rows 0</span>
+          </div>
+          <button class="button" id="downloadBtn" disabled>Download result CSV</button>
+        </div>
+      </div>
+
+      <div class="section">
+        <div class="table-wrap">
+          <table>
+            <thead>
+              <tr>
+                <th>Employee First Name</th>
+                <th>Employee Last Name</th>
+                <th>Area Name</th>
+                <th>Location Name</th>
+                <th>Date</th>
+                <th>Start Time</th>
+                <th>End Time</th>
+                <th>Total Meal break</th>
+                <th>Meal break slots</th>
+                <th>Violations</th>
+              </tr>
+            </thead>
+            <tbody id="resultsBody">
+              <tr>
+                <td colspan="10" class="empty">Upload a CSV file to see invalid shifts here.</td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </section>
+
+    <section class="error-box" id="errorBox" data-empty="true">No errors</section>
+  </main>
+
+  <script>
+    const REQUIRED_COLUMNS = [
+      "Employee First Name",
+      "Employee Last Name",
+      "Area Name",
+      "Location Name",
+      "Date",
+      "Start Time",
+      "End Time",
+      "Total Meal break",
+      "Meal break slots"
+    ];
+
+    const OUTPUT_COLUMNS = [...REQUIRED_COLUMNS, "Violations"];
+
+    const dropzone = document.getElementById("dropzone");
+    const fileInput = document.getElementById("fileInput");
+    const fileName = document.getElementById("fileName");
+    const totalRows = document.getElementById("totalRows");
+    const invalidRows = document.getElementById("invalidRows");
+    const resultsBody = document.getElementById("resultsBody");
+    const downloadBtn = document.getElementById("downloadBtn");
+    const errorBox = document.getElementById("errorBox");
+
+    let invalidResults = [];
+
+    function setError(message) {
+      const hasMessage = Boolean(message && message.trim());
+      errorBox.textContent = hasMessage ? message : "No errors";
+      errorBox.dataset.empty = String(!hasMessage);
+    }
+
+    function escapeHtml(value) {
+      return String(value ?? "")
+        .replaceAll("&", "&amp;")
+        .replaceAll("<", "&lt;")
+        .replaceAll(">", "&gt;")
+        .replaceAll('"', "&quot;")
+        .replaceAll("'", "&#39;");
+    }
+
+    function parseCsv(text) {
+      const rows = [];
+      let row = [];
+      let cell = "";
+      let inQuotes = false;
+
+      for (let i = 0; i < text.length; i += 1) {
+        const char = text[i];
+
+        if (inQuotes) {
+          if (char === '"') {
+            if (text[i + 1] === '"') {
+              cell += '"';
+              i += 1;
+            } else {
+              inQuotes = false;
+            }
+          } else {
+            cell += char;
+          }
+          continue;
+        }
+
+        if (char === '"') {
+          inQuotes = true;
+        } else if (char === ",") {
+          row.push(cell);
+          cell = "";
+        } else if (char === "\n") {
+          row.push(cell);
+          rows.push(row);
+          row = [];
+          cell = "";
+        } else if (char !== "\r") {
+          cell += char;
+        }
+      }
+
+      if (cell.length > 0 || row.length > 0) {
+        row.push(cell);
+        rows.push(row);
+      }
+
+      return rows.filter((currentRow) => currentRow.some((value) => String(value).trim() !== ""));
+    }
+
+    function timeToMinutes(value) {
+      if (!/^\d{1,2}:\d{2}$/.test(value)) {
+        return null;
+      }
+
+      const [hours, minutes] = value.split(":").map(Number);
+      if (hours > 23 || minutes > 59) {
+        return null;
+      }
+
+      return hours * 60 + minutes;
+    }
+
+    function validateRow(row) {
+      const violations = [];
+      const startMinutes = timeToMinutes(row["Start Time"]);
+      const endMinutes = timeToMinutes(row["End Time"]);
+      const totalMealBreakRaw = row["Total Meal break"];
+      const totalMealBreak = totalMealBreakRaw === "" ? 0 : Number(totalMealBreakRaw);
+      const mealBreakSlots = row["Meal break slots"].trim();
+
+      if (startMinutes === null) {
+        violations.push("Start Time has an invalid format.");
+      }
+
+      if (endMinutes === null) {
+        violations.push("End Time has an invalid format.");
+      }
+
+      if (!Number.isFinite(totalMealBreak) || totalMealBreak < 0) {
+        violations.push("Total Meal break is not a valid non-negative number.");
+      }
+
+      if (violations.length > 0) {
+        return violations;
+      }
+
+      const shiftMinutes = endMinutes - startMinutes;
+
+      if (shiftMinutes <= 0) {
+        violations.push("End Time is earlier than or equal to Start Time.");
+      }
+
+      if (totalMealBreak >= shiftMinutes) {
+        violations.push("Total Meal break is greater than or equal to the full shift duration.");
+      }
+
+      if (totalMealBreak > 30) {
+        violations.push("Total Meal break exceeds the 30-minute limit.");
+      }
+
+      if (shiftMinutes >= 300 && totalMealBreak === 0) {
+        violations.push("Shift is 5 hours or longer but has no meal break.");
+      }
+
+      if (totalMealBreak === 0 && mealBreakSlots) {
+        violations.push("Meal break slots exist but Total Meal break is 0.");
+      }
+
+      if (totalMealBreak > 0 && !mealBreakSlots) {
+        violations.push("Total Meal break exists but Meal break slots is empty.");
+      }
+
+      if (mealBreakSlots) {
+        const parts = mealBreakSlots
+          .split(",")
+          .map((part) => part.trim())
+          .filter(Boolean);
+
+        if (parts.length !== 2) {
+              violations.push("Meal break slots must contain exactly two values in 'HH:MM,HH:MM' format.");
+        } else {
+          const breakStart = timeToMinutes(parts[0]);
+          const breakEnd = timeToMinutes(parts[1]);
+
+          if (breakStart === null || breakEnd === null) {
+            violations.push("Meal break slots contains an invalid time format.");
+          } else {
+            if (breakEnd <= breakStart) {
+              violations.push("Meal break end time is earlier than or equal to meal break start time.");
+            }
+
+            if (breakStart < startMinutes || breakEnd > endMinutes) {
+              violations.push("Meal break slots falls outside the shift time range.");
+            }
+
+            if (Math.abs((breakEnd - breakStart) - totalMealBreak) > 5) {
+              violations.push("Meal break slots duration differs from Total Meal break by more than 5 minutes.");
+            }
+
+            if (endMinutes - breakEnd >= 300) {
+              violations.push("Shift has 5 hours or more of work after the meal break.");
+            }
+          }
+        }
+      }
+
+      return violations;
+    }
+
+    function renderResults(rows) {
+      if (rows.length === 0) {
+        resultsBody.innerHTML = '<tr><td colspan="10" class="empty">No invalid shifts found.</td></tr>';
+        return;
+      }
+
+      resultsBody.innerHTML = rows
+        .map((row) => {
+          return `
+            <tr>
+              <td>${escapeHtml(row["Employee First Name"])}</td>
+              <td>${escapeHtml(row["Employee Last Name"])}</td>
+              <td>${escapeHtml(row["Area Name"])}</td>
+              <td>${escapeHtml(row["Location Name"])}</td>
+              <td>${escapeHtml(row["Date"])}</td>
+              <td>${escapeHtml(row["Start Time"])}</td>
+              <td>${escapeHtml(row["End Time"])}</td>
+              <td>${escapeHtml(row["Total Meal break"])}</td>
+              <td>${escapeHtml(row["Meal break slots"])}</td>
+              <td class="violations">${escapeHtml(row["Violations"])}</td>
+            </tr>
+          `;
+        })
+        .join("");
+    }
+
+    function toCsv(rows) {
+      const csvRows = [OUTPUT_COLUMNS];
+
+      rows.forEach((row) => {
+        csvRows.push(OUTPUT_COLUMNS.map((column) => row[column] ?? ""));
+      });
+
+      return csvRows
+        .map((row) => row.map((value) => `"${String(value).replaceAll('"', '""')}"`).join(","))
+        .join("\r\n");
+    }
+
+    function downloadResults() {
+      if (invalidResults.length === 0) {
+        return;
+      }
+
+      const csvContent = toCsv(invalidResults);
+      const blob = new Blob([csvContent], { type: "text/csv;charset=utf-8;" });
+      const url = URL.createObjectURL(blob);
+      const link = document.createElement("a");
+      link.href = url;
+      link.download = "invalid_shifts.csv";
+      document.body.appendChild(link);
+      link.click();
+      link.remove();
+      URL.revokeObjectURL(url);
+    }
+
+    function processCsvFile(file) {
+      if (!file) {
+        return;
+      }
+
+      if (!file.name.toLowerCase().endsWith(".csv") && file.type !== "text/csv") {
+        setError("Only CSV files can be uploaded.");
+        return;
+      }
+
+      fileName.textContent = `Selected file: ${file.name}`;
+      setError("");
+
+      const reader = new FileReader();
+
+      reader.onload = () => {
+        try {
+          const text = String(reader.result || "");
+          const rows = parseCsv(text);
+
+          if (rows.length < 2) {
+            throw new Error("The CSV must include a header row and at least one data row.");
+          }
+
+          const headers = rows[0].map((header) => header.trim());
+          const missingColumns = REQUIRED_COLUMNS.filter((column) => !headers.includes(column));
+
+          if (missingColumns.length > 0) {
+            throw new Error(`Missing required columns: ${missingColumns.join(", ")}`);
+          }
+
+          const invalids = [];
+          const dataRows = rows.slice(1);
+
+          dataRows.forEach((cells, rowIndex) => {
+            const record = {};
+            headers.forEach((header, index) => {
+              record[header] = (cells[index] ?? "").trim();
+            });
+
+            const violations = validateRow(record);
+            if (violations.length > 0) {
+              invalids.push({
+                "Employee First Name": record["Employee First Name"],
+                "Employee Last Name": record["Employee Last Name"],
+                "Area Name": record["Area Name"],
+                "Location Name": record["Location Name"],
+                "Date": record["Date"],
+                "Start Time": record["Start Time"],
+                "End Time": record["End Time"],
+                "Total Meal break": record["Total Meal break"],
+                "Meal break slots": record["Meal break slots"],
+                "Violations": violations.join(" | "),
+                "__rowIndex": rowIndex + 2
+              });
+            }
+          });
+
+          invalidResults = invalids;
+          totalRows.textContent = `Total rows ${dataRows.length}`;
+          invalidRows.textContent = `Invalid rows ${invalidResults.length}`;
+          downloadBtn.disabled = invalidResults.length === 0;
+          renderResults(invalidResults);
+        } catch (error) {
+          invalidResults = [];
+          totalRows.textContent = "Total rows 0";
+          invalidRows.textContent = "Invalid rows 0";
+          downloadBtn.disabled = true;
+          renderResults([]);
+          setError(error instanceof Error ? error.message : String(error));
+        }
+      };
+
+      reader.onerror = () => {
+        setError("An error occurred while reading the file.");
+      };
+
+      reader.readAsText(file, "utf-8");
+    }
+
+    dropzone.addEventListener("dragover", (event) => {
+      event.preventDefault();
+      dropzone.classList.add("dragover");
+    });
+
+    dropzone.addEventListener("dragleave", () => {
+      dropzone.classList.remove("dragover");
+    });
+
+    dropzone.addEventListener("drop", (event) => {
+      event.preventDefault();
+      dropzone.classList.remove("dragover");
+      const [file] = event.dataTransfer.files;
+      processCsvFile(file);
+    });
+
+    fileInput.addEventListener("change", (event) => {
+      const target = event.target;
+      const [file] = target.files || [];
+      processCsvFile(file);
+    });
+
+    downloadBtn.addEventListener("click", downloadResults);
+
+    window.addEventListener("error", (event) => {
+      setError(`Page runtime error: ${event.message}`);
+    });
+  </script>
+</body>
+</html>
