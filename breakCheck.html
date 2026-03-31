@@ -283,7 +283,7 @@
       This page accepts CSV files only and extracts invalid shifts. The current workspace
       <code>breakRule.md</code> file is empty, so validation is based on reliably checkable CSV rules
       plus a meal break requirement for shifts of 5 hours or longer, a maximum meal break limit of 30 minutes,
-      a split shift flag for meal breaks of 60 minutes or longer, and a rule that flags shifts with
+      a split shift notice for meal breaks of 60 minutes or longer, and a rule that flags shifts with
       5 hours or more of work after the recorded meal break.
     </p>
 
@@ -476,7 +476,7 @@
       }
 
       if (totalMealBreak >= 60) {
-        violations.push("Split Shift violation: Meal break is 60 minutes or longer.");
+        violations.push("Meal break is 60 minutes or longer, so this shift should be treated as a split shift.");
       }
 
       if (shiftMinutes >= 300 && totalMealBreak === 0) {
