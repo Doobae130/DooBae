@@ -361,7 +361,7 @@
     const downloadBtn = document.getElementById("downloadBtn");
     const errorBox = document.getElementById("errorBox");
 
-    let invalidResults = [];
+    let processedResults = [];
 
     function setError(message) {
       const hasMessage = Boolean(message && message.trim());
@@ -530,7 +530,7 @@
 
     function renderResults(rows) {
       if (rows.length === 0) {
-        resultsBody.innerHTML = '<tr><td colspan="10" class="empty">No invalid shifts found.</td></tr>';
+        resultsBody.innerHTML = '<tr><td colspan="10" class="empty">Upload a CSV file to see results here.</td></tr>';
         return;
       }
 
@@ -567,16 +567,16 @@
     }
 
     function downloadResults() {
-      if (invalidResults.length === 0) {
+      if (processedResults.length === 0) {
         return;
       }
 
-      const csvContent = toCsv(invalidResults);
+      const csvContent = toCsv(processedResults);
       const blob = new Blob([csvContent], { type: "text/csv;charset=utf-8;" });
       const url = URL.createObjectURL(blob);
       const link = document.createElement("a");
       link.href = url;
-      link.download = "invalid_shifts.csv";
+      link.download = "break_check_results.csv";
       document.body.appendChild(link);
       link.click();
       link.remove();
@@ -614,7 +614,7 @@
             throw new Error(`Missing required columns: ${missingColumns.join(", ")}`);
           }
 
-          const invalids = [];
+          const processedRows = [];
           const dataRows = rows.slice(1);
 
           dataRows.forEach((cells, rowIndex) => {
@@ -624,30 +624,29 @@
             });
 
             const violations = validateRow(record);
-            if (violations.length > 0) {
-              invalids.push({
-                "Employee First Name": record["Employee First Name"],
-                "Employee Last Name": record["Employee Last Name"],
-                "Area Name": record["Area Name"],
-                "Location Name": record["Location Name"],
-                "Date": record["Date"],
-                "Start Time": record["Start Time"],
-                "End Time": record["End Time"],
-                "Total Meal break": record["Total Meal break"],
-                "Meal break slots": record["Meal break slots"],
-                "Violations": violations.join(" | "),
-                "__rowIndex": rowIndex + 2
-              });
-            }
+            processedRows.push({
+              "Employee First Name": record["Employee First Name"],
+              "Employee Last Name": record["Employee Last Name"],
+              "Area Name": record["Area Name"],
+              "Location Name": record["Location Name"],
+              "Date": record["Date"],
+              "Start Time": record["Start Time"],
+              "End Time": record["End Time"],
+              "Total Meal break": record["Total Meal break"],
+              "Meal break slots": record["Meal break slots"],
+              "Violations": violations.length > 0 ? violations.join(" | ") : "None",
+              "__rowIndex": rowIndex + 2
+            });
           });
 
-          invalidResults = invalids;
+          processedResults = processedRows;
+          const invalidCount = processedRows.filter((row) => row["Violations"] !== "None").length;
           totalRows.textContent = `Total rows ${dataRows.length}`;
-          invalidRows.textContent = `Invalid rows ${invalidResults.length}`;
-          downloadBtn.disabled = invalidResults.length === 0;
-          renderResults(invalidResults);
+          invalidRows.textContent = `Invalid rows ${invalidCount}`;
+          downloadBtn.disabled = processedResults.length === 0;
+          renderResults(processedResults);
         } catch (error) {
-          invalidResults = [];
+          processedResults = [];
           totalRows.textContent = "Total rows 0";
           invalidRows.textContent = "Invalid rows 0";
           downloadBtn.disabled = true;
