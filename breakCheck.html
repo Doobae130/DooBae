@@ -194,6 +194,7 @@
     .violations {
       color: var(--bad-text);
       font-weight: 600;
+      white-space: pre-line;
     }
 
     .empty {
@@ -321,12 +322,13 @@
                 <th>End Time</th>
                 <th>Total Meal break</th>
                 <th>Meal break slots</th>
+                <th>Total Work Hours</th>
                 <th>Violations</th>
               </tr>
             </thead>
             <tbody id="resultsBody">
               <tr>
-                <td colspan="10" class="empty">Upload a CSV file to see invalid shifts here.</td>
+                <td colspan="11" class="empty">Upload a CSV file to see invalid shifts here.</td>
               </tr>
             </tbody>
           </table>
@@ -350,7 +352,7 @@
       "Meal break slots"
     ];
 
-    const OUTPUT_COLUMNS = [...REQUIRED_COLUMNS, "Violations"];
+    const OUTPUT_COLUMNS = [...REQUIRED_COLUMNS, "Total Work Hours", "Violations"];
 
     const dropzone = document.getElementById("dropzone");
     const fileInput = document.getElementById("fileInput");
@@ -437,6 +439,31 @@
       return hours * 60 + minutes;
     }
 
+    function formatMinutesAsHoursAndMinutes(totalMinutes) {
+      const safeMinutes = Math.max(0, totalMinutes);
+      const hours = Math.floor(safeMinutes / 60);
+      const minutes = safeMinutes % 60;
+      return `${String(hours).padStart(2, "0")}:${String(minutes).padStart(2, "0")}`;
+    }
+
+    function getTotalWorkHours(row) {
+      const startMinutes = timeToMinutes(row["Start Time"]);
+      const endMinutes = timeToMinutes(row["End Time"]);
+      const totalMealBreakRaw = row["Total Meal break"];
+      const totalMealBreak = totalMealBreakRaw === "" ? 0 : Number(totalMealBreakRaw);
+
+      if (startMinutes === null || endMinutes === null || !Number.isFinite(totalMealBreak)) {
+        return "";
+      }
+
+      const shiftMinutes = endMinutes - startMinutes;
+      if (shiftMinutes <= 0) {
+        return "";
+      }
+
+      return formatMinutesAsHoursAndMinutes(shiftMinutes - Math.max(0, totalMealBreak));
+    }
+
     function validateRow(row) {
       const violations = [];
       const startMinutes = timeToMinutes(row["Start Time"]);
@@ -480,7 +507,7 @@
       }
 
       if (shiftMinutes >= 300 && totalMealBreak === 0) {
-        violations.push("Shift is 5 hours or longer but has no meal break.");
+        violations.push("Need 30 min meal break.");
       }
 
       if (totalMealBreak === 0 && mealBreakSlots) {
@@ -488,7 +515,7 @@
       }
 
       if (totalMealBreak > 0 && !mealBreakSlots) {
-        violations.push("Total Meal break exists but Meal break slots is empty.");
+        violations.push("Need to record Break clock-in and out.");
       }
 
       if (mealBreakSlots) {
@@ -519,7 +546,7 @@
             }
 
             if (endMinutes - breakEnd >= 300) {
-              violations.push("Shift has 5 hours or more of work after the meal break.");
+              violations.push("Need 20 min rest break (worked 5hours after the meal break.)");
             }
           }
         }
@@ -530,7 +557,7 @@
 
     function renderResults(rows) {
       if (rows.length === 0) {
-        resultsBody.innerHTML = '<tr><td colspan="10" class="empty">Upload a CSV file to see results here.</td></tr>';
+        resultsBody.innerHTML = '<tr><td colspan="11" class="empty">Upload a CSV file to see results here.</td></tr>';
         return;
       }
 
@@ -547,6 +574,7 @@
               <td>${escapeHtml(row["End Time"])}</td>
               <td>${escapeHtml(row["Total Meal break"])}</td>
               <td>${escapeHtml(row["Meal break slots"])}</td>
+              <td>${escapeHtml(row["Total Work Hours"])}</td>
               <td class="violations">${escapeHtml(row["Violations"])}</td>
             </tr>
           `;
@@ -634,6 +662,7 @@
               "End Time": record["End Time"],
               "Total Meal break": record["Total Meal break"],
               "Meal break slots": record["Meal break slots"],
+              "Total Work Hours": getTotalWorkHours(record),
               "Violations": violations.length > 0 ? violations.join(" | ") : "None",
               "__rowIndex": rowIndex + 2
             });
