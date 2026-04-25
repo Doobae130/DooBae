@@ -281,11 +281,13 @@
   <main class="page">
     <h1>Break Check Validator</h1>
     <p class="intro">
-      This page accepts CSV files only and extracts invalid shifts. The current workspace
-      <code>breakRule.md</code> file is empty, so validation is based on reliably checkable CSV rules
-      plus a meal break requirement for shifts of 5 hours or longer, a maximum meal break limit of 30 minutes,
-      a split shift notice for meal breaks of 60 minutes or longer, and a rule that flags shifts with
-      5 hours or more of work after the recorded meal break.
+      This page accepts CSV files only and extracts invalid shifts. Validation is based on the
+      current break rules: shifts from 5 hours to under 10 hours must include one unpaid
+      30-minute meal break, shifts of 10 hours or more also require two paid 20-minute rest
+      breaks, unpaid meal breaks must start after the first hour and before 5 continuous hours,
+      and 60-minute or greater gaps are treated as separate shifts. Because this CSV only records
+      unpaid meal breaks, required paid rest breaks are flagged as rule violations instead of
+      being directly verified.
     </p>
 
     <section class="card">
@@ -364,6 +366,11 @@
     const errorBox = document.getElementById("errorBox");
 
     let processedResults = [];
+    const FIRST_HOUR = 60;
+    const FIVE_HOURS = 300;
+    const TEN_HOURS = 600;
+    const UNPAID_MEAL_BREAK = 30;
+    const SEPARATE_SHIFT_GAP = 60;
 
     function setError(message) {
       const hasMessage = Boolean(message && message.trim());
@@ -446,6 +453,25 @@
       return `${String(hours).padStart(2, "0")}:${String(minutes).padStart(2, "0")}`;
     }
 
+    function validateWorkSegment(workMinutes, label = "Shift") {
+      const violations = [];
+
+      if (workMinutes <= 0) {
+        violations.push(`${label} has invalid work time.`);
+        return violations;
+      }
+
+      if (workMinutes >= FIVE_HOURS && workMinutes < TEN_HOURS) {
+        violations.push(`${label} needs one 30-minute unpaid break.`);
+      }
+
+      if (workMinutes >= TEN_HOURS) {
+        violations.push(`${label} needs one 30-minute unpaid break and two paid 20-minute breaks.`);
+      }
+
+      return violations;
+    }
+
     function getTotalWorkHours(row) {
       const startMinutes = timeToMinutes(row["Start Time"]);
       const endMinutes = timeToMinutes(row["End Time"]);
@@ -473,15 +499,15 @@
       const mealBreakSlots = row["Meal break slots"].trim();
 
       if (startMinutes === null) {
-        violations.push("Start Time has an invalid format.");
+        violations.push("Start Time format is invalid.");
       }
 
       if (endMinutes === null) {
-        violations.push("End Time has an invalid format.");
+        violations.push("End Time format is invalid.");
       }
 
       if (!Number.isFinite(totalMealBreak) || totalMealBreak < 0) {
-        violations.push("Total Meal break is not a valid non-negative number.");
+        violations.push("Total Meal break is invalid.");
       }
 
       if (violations.length > 0) {
@@ -489,33 +515,33 @@
       }
 
       const shiftMinutes = endMinutes - startMinutes;
+      const workMinutes = shiftMinutes - totalMealBreak;
 
       if (shiftMinutes <= 0) {
-        violations.push("End Time is earlier than or equal to Start Time.");
+        violations.push("End Time must be later than Start Time.");
       }
 
       if (totalMealBreak >= shiftMinutes) {
-        violations.push("Total Meal break is greater than or equal to the full shift duration.");
+        violations.push("Meal break is too long for this shift.");
       }
 
-      if (totalMealBreak > 30) {
-        violations.push("Total Meal break exceeds the 30-minute limit.");
+      if (workMinutes <= 0) {
+        violations.push("Total work hours are invalid.");
       }
 
-      if (totalMealBreak >= 60) {
-        violations.push("Meal break is 60 minutes or longer, so this shift should be treated as a split shift.");
-      }
-
-      if (shiftMinutes >= 300 && totalMealBreak === 0) {
-        violations.push("Need 30 min meal break.");
+      if (totalMealBreak > 0 && totalMealBreak < SEPARATE_SHIFT_GAP && totalMealBreak !== UNPAID_MEAL_BREAK) {
+        violations.push("Unpaid break must be exactly 30 minutes.");
       }
 
       if (totalMealBreak === 0 && mealBreakSlots) {
-        violations.push("Meal break slots exist but Total Meal break is 0.");
+        violations.push("Break slots are recorded, but Total Meal break is 0.");
       }
 
       if (totalMealBreak > 0 && !mealBreakSlots) {
-        violations.push("Need to record Break clock-in and out.");
+        violations.push("Break slots are missing.");
+        if (totalMealBreak >= SEPARATE_SHIFT_GAP) {
+          violations.push("A 60-minute or longer gap needs break slots.");
+        }
       }
 
       if (mealBreakSlots) {
@@ -525,31 +551,76 @@
           .filter(Boolean);
 
         if (parts.length !== 2) {
-              violations.push("Meal break slots must contain exactly two values in 'HH:MM,HH:MM' format.");
+              violations.push("Break slots must use HH:MM,HH:MM format.");
         } else {
           const breakStart = timeToMinutes(parts[0]);
           const breakEnd = timeToMinutes(parts[1]);
 
           if (breakStart === null || breakEnd === null) {
-            violations.push("Meal break slots contains an invalid time format.");
+            violations.push("Break slots contain an invalid time.");
           } else {
+            const breakDuration = breakEnd - breakStart;
+
             if (breakEnd <= breakStart) {
-              violations.push("Meal break end time is earlier than or equal to meal break start time.");
+              violations.push("Break end time must be later than break start time.");
             }
 
             if (breakStart < startMinutes || breakEnd > endMinutes) {
-              violations.push("Meal break slots falls outside the shift time range.");
+              violations.push("Break time falls outside the shift.");
             }
 
-            if (Math.abs((breakEnd - breakStart) - totalMealBreak) > 5) {
-              violations.push("Meal break slots duration differs from Total Meal break by more than 5 minutes.");
+            if (Math.abs(breakDuration - totalMealBreak) > 5) {
+              violations.push("Break duration does not match Total Meal break.");
             }
 
-            if (endMinutes - breakEnd >= 300) {
-              violations.push("Need 20 min rest break (worked 5hours after the meal break.)");
+            const preMealWork = breakStart - startMinutes;
+            const postMealWork = endMinutes - breakEnd;
+
+            if (breakDuration >= SEPARATE_SHIFT_GAP) {
+              violations.push("A 60-minute or longer gap creates separate shifts.");
+              validateWorkSegment(preMealWork, "First separate shift").forEach((message) => {
+                violations.push(message);
+              });
+              validateWorkSegment(postMealWork, "Second separate shift").forEach((message) => {
+                violations.push(message);
+              });
+            } else {
+              if (workMinutes >= FIVE_HOURS && workMinutes < TEN_HOURS && totalMealBreak !== UNPAID_MEAL_BREAK) {
+                violations.push("This shift needs one 30-minute unpaid break.");
+              }
+
+              if (workMinutes >= TEN_HOURS && totalMealBreak !== UNPAID_MEAL_BREAK) {
+                violations.push("A 10-hour or longer shift needs one 30-minute unpaid break.");
+              }
+
+              if (preMealWork <= FIRST_HOUR) {
+                violations.push("Unpaid break starts too early.");
+              }
+
+              if (preMealWork >= FIVE_HOURS) {
+                violations.push("Unpaid break starts too late.");
+              }
+
+              if (postMealWork >= FIVE_HOURS) {
+                violations.push("Worked 5 or more continuous hours after the unpaid break.");
+              }
             }
           }
         }
+      }
+
+      if (!mealBreakSlots) {
+        if (workMinutes >= FIVE_HOURS && workMinutes < TEN_HOURS && totalMealBreak !== UNPAID_MEAL_BREAK) {
+          violations.push("This shift needs one 30-minute unpaid break.");
+        }
+
+        if (workMinutes >= TEN_HOURS && totalMealBreak !== UNPAID_MEAL_BREAK) {
+          violations.push("A 10-hour or longer shift needs one 30-minute unpaid break.");
+        }
+      }
+
+      if (workMinutes >= TEN_HOURS) {
+        violations.push("A 10-hour or longer shift needs two paid 20-minute breaks.");
       }
 
       return violations;
